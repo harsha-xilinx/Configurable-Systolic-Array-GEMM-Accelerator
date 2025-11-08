@@ -1,0 +1,102 @@
+rtl/
+  pe.sv
+  systolic_array.sv
+  controller.sv
+  top.sv
+sim/
+  tb_top.sv
+  cocotb/
+     test_gemm.py
+scripts/
+  gen_matrices.py
+  run_synthesis.sh
+docs/
+  arch_doc.md
+  diagrams/
+report/
+  perf_summary.pdf
+
+
+✅ Google TPU example
+
+Google TPU v1 uses a weight-stationary–like + output-stationary hybrid:
+Weights preloaded
+Accumulators local
+Data streams through
+So real designs often combine strategies.
+
+
+✅ Project plan clarification
+
+➡️ For the first version of this project:
+We will implement output-stationary, because it’s the simplest:
+Accumulator stays in PE
+A & B both stream
+I suggested weight-stationary as an optional second mode, but to avoid confusion:
+✅ We will build output-stationary first, not weight-stationary.
+Why?
+Output-stationary is the standard intro GEMM systolic array
+Easier to understand + verify
+Many open-source examples follow this
+Avoids storing B in PE
+So:
+✅ First: Output-stationary
+Optional later: Add weight-stationary mode
+
+| Concept           | Meaning                               |
+| ----------------- | ------------------------------------- |
+| Systolic array    | Structured data movement grid         |
+| Stationary type   | How data is stored/reused             |
+| Weight-stationary | Store B inside PE                     |
+| Output-stationary | Store C accumulator in PE             |
+| This project      | Start with output-stationary (simple) |
+
+
+Pipeline: optional 1-stage multiply then add; keep simple single-cycle multiply-add for simulation clarity, or 2-stage pipeline for timing.
+  We will go with simple single cycle multiply
+========================================================================================================================================================================
+
+// BAasic PE by chatgpt
+module pe #(
+  parameter DW = 8,
+  parameter ACCW = 32
+) (
+  input logic clk, rst_n,
+  input logic [DW-1:0] A_in,
+  input logic A_valid,
+  input logic [DW-1:0] B_in,
+  input logic B_valid,
+  input logic clear_acc,
+  output logic [DW-1:0] A_out,
+  output logic A_out_valid,
+  output logic [DW-1:0] B_out,
+  output logic B_out_valid,
+  output logic [ACCW-1:0] acc_out,
+  output logic acc_out_valid
+);
+
+  logic [ACCW-1:0] acc;
+  logic [DW*2-1:0] prod;
+
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      acc <= '0;
+    end else begin
+      if (clear_acc) acc <= '0;
+      else if (A_valid && B_valid) acc <= acc + $signed(A_in) * $signed(B_in);
+    end
+  end
+
+  // pass-through
+  assign A_out = A_in;
+  assign A_out_valid = A_valid;
+  assign B_out = B_in;
+  assign B_out_valid = B_valid;
+
+  // output when controller decides tile done: (controller will sample acc)
+  assign acc_out = acc;
+  // controller is responsible to latch acc_out when acc_out_valid asserted
+  assign acc_out_valid = /* wired to controller once done */ 1'b0;
+
+endmodule
+========================================================================================================================================================================
